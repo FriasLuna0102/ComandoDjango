@@ -21,12 +21,12 @@ fi
 API_CL="$1"
 # Instalar Git LFS
 sudo apt-get update
-sudo apt-get install -y git-lfs
-git lfs install
+# sudo apt-get install -y git-lfs
+# git lfs install
 # Clonar repositorio con LFS
-git clone https://github.com/RandaeGS/proyecto_tesis
-cd proyecto_tesis
-git lfs pull
+# git clone https://github.com/FriasLuna0102/ComandoDjango
+cd ComandoDjango
+# git lfs pull
 # Instalar Docker
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl
