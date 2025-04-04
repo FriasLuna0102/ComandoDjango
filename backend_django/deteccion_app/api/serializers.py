@@ -12,9 +12,9 @@ class DeteccionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Deteccion
         fields = ['id', 'fecha_creacion', 'tipo_modelo', 'numero_objetos',
-                  'tiempo_procesamiento', 'resultados', 'center_id', 'image_id']
+                  'tiempo_procesamiento', 'resultados', 'center_id', 'image_id', 'confirmed']
         read_only_fields = ['id', 'fecha_creacion', 'numero_objetos',
-                            'tiempo_procesamiento', 'resultados', 'center_id', 'image_id']
+                            'tiempo_procesamiento', 'resultados', 'center_id', 'image_id', 'confirmed']
 
     def get_resultados(self, obj):
         """Obtiene los resultados como diccionario"""
@@ -38,3 +38,13 @@ class ImagenUploadSerializer(serializers.Serializer):
     center_id = serializers.IntegerField(required=False)
     lighting_condition = serializers.CharField(max_length=50, required=False, allow_blank=True)
     metadata = serializers.JSONField(required=False, default=dict)
+
+
+class ConfirmAnalysisSerializer(serializers.Serializer):
+    """Serializador para confirmar un análisis previamente realizado"""
+
+    analysis_id = serializers.CharField(required=True)
+    imagen = serializers.ImageField(required=False)
+    guardar_imagen = serializers.BooleanField(default=True)
+    center_id = serializers.IntegerField(required=False)
+    resultados_modificados = serializers.JSONField(required=False)
