@@ -20,15 +20,12 @@ def fix_image_orientation(img):
     Corrige la orientación de la imagen basándose en los datos EXIF
     """
     try:
-        # Obtener la información EXIF
         if hasattr(img, '_getexif') and img._getexif() is not None:
             exif = dict((ExifTags.TAGS.get(k, k), v) for k, v in img._getexif().items())
 
-            # Encontrar la orientación
             if 'Orientation' in exif:
                 orientation = exif['Orientation']
 
-                # Aplicar transformaciones según la orientación
                 if orientation == 2:
                     img = img.transpose(Image.FLIP_LEFT_RIGHT)
                 elif orientation == 3:
@@ -58,10 +55,8 @@ def prepare_image_for_model(img_file):
     - Preserva la calidad sin redimensionar innecesariamente
     """
     try:
-        # Abrir imagen con PIL
         img = Image.open(img_file)
 
-        # Si la imagen tiene transparencia, convertir a RGB rellenando con blanco
         if img.mode == 'RGBA':
             background = Image.new('RGB', img.size, (255, 255, 255))
             background.paste(img, mask=img.split()[3])  # Canal alfa
@@ -69,24 +64,22 @@ def prepare_image_for_model(img_file):
         elif img.mode != 'RGB':
             img = img.convert('RGB')
 
-        # Corregir orientación basada en EXIF
         img = fix_image_orientation(img)
 
-        # Verificar si necesitamos redimensionar (solo si la imagen es muy grande)
         width, height = img.size
         max_dimension = 1920  # Límite razonable que mantiene buena calidad
 
-        if width > max_dimension or height > max_dimension:
-            # Calcular nueva dimensión preservando proporción
-            if width > height:
-                new_width = max_dimension
-                new_height = int(height * max_dimension / width)
-            else:
-                new_height = max_dimension
-                new_width = int(width * max_dimension / height)
-
-            logger.info(f"Redimensionando imagen de {width}x{height} a {new_width}x{new_height}")
-            img = img.resize((new_width, new_height), Image.LANCZOS)
+        # if width > max_dimension or height > max_dimension:
+        #     # Calcular nueva dimensión preservando proporción
+        #     if width > height:
+        #         new_width = max_dimension
+        #         new_height = int(height * max_dimension / width)
+        #     else:
+        #         new_height = max_dimension
+        #         new_width = int(width * max_dimension / height)
+        #
+        #     logger.info(f"Redimensionando imagen de {width}x{height} a {new_width}x{new_height}")
+        #     img = img.resize((new_width, new_height), Image.LANCZOS)
 
         logger.info(f"Imagen preparada: {img.size[0]}x{img.size[1]}, modo: {img.mode}")
         return img
@@ -102,12 +95,12 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Deteccion.objects.all()
     serializer_class = DeteccionSerializer
 
-    # En tu clase DeteccionViewSet
     @action(detail=False, methods=['post'], url_path='analizar')
     def analizar_imagen(self, request):
         """
         Analiza una imagen usando el modelo seleccionado
         """
+        print("Request recibido:", request.data)
         serializer = ImagenUploadSerializer(data=request.data)
 
         if not serializer.is_valid():
@@ -117,16 +110,13 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
         tipo_modelo = serializer.validated_data['tipo_modelo']
         guardar_imagen = serializer.validated_data['guardar_imagen']
 
-        # Campos opcionales para el modelo Image
         center_id = serializer.validated_data.get('center_id', None)
         lighting_condition = serializer.validated_data.get('lighting_condition', '')
         metadata = serializer.validated_data.get('metadata', {})
 
-        # Cargar y preparar imagen con PIL
         try:
             imagen_pil = prepare_image_for_model(imagen_file)
 
-            # Guardar información sobre la imagen para debugging
             logger.info(f"Imagen cargada: {imagen_pil.size[0]}x{imagen_pil.size[1]}, "
                         f"modo: {imagen_pil.mode}, formato: {imagen_file.content_type}")
         except Exception as e:
@@ -135,42 +125,40 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Seleccionar el servicio de modelo apropiado
         if tipo_modelo == 'yolo':
             modelo_service = YOLOService()
         elif tipo_modelo == 'cl':
             modelo_service = ClaudeService()
-        elif tipo_modelo == 'roboflow':
+        elif tipo_modelo == 'rf_detr':
             modelo_service = RoboflowService()
+            resultados_rf = modelo_service.process_image(imagen_pil)
+            if resultados_rf.get('output_image'):
+
+                imagen_file = resultados_rf['output_image']
+                # print("Imagen procesada:", imagen_file)
         else:
             return Response(
                 {'error': f'Tipo de modelo no soportado: {tipo_modelo}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Procesar la imagen
         try:
             start_time = time.time()
-            modelo_service.load_model()  # Asegurarse de que el modelo esté cargado
+            modelo_service.load_model()
             resultados = modelo_service.process_image(imagen_pil)
             tiempo_procesamiento = time.time() - start_time
 
-            # Log de resultados para debugging
             detections_count = len(resultados.get('detections', []))
             logger.info(f"Detecciones encontradas: {detections_count}")
 
-            # Si no hay detecciones, registrar más información
             if detections_count == 0:
                 logger.warning(f"No se encontraron detecciones. Modelo: {tipo_modelo}, "
                                f"Tiempo: {tiempo_procesamiento:.2f}s")
 
-            # Obtener el centro antes de crear la detección
-            # Importar modelos necesarios
             from uploads.models import Image as ImageModel
             from center.models import Center
             from django.utils import timezone
 
-            # Verificar si hay centros disponibles
             center_instance = None
             center_count = Center.objects.count()
             logger.info(f"Número de centros disponibles: {center_count}")
@@ -182,7 +170,6 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
                 except Center.DoesNotExist:
                     logger.warning(f"Centro con ID {center_id} no encontrado")
 
-            # Si no hay centro específico, buscar uno existente o crear uno nuevo
             if not center_instance:
                 center_instance = Center.objects.first()
 
@@ -195,7 +182,6 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
                     )
                     logger.info(f"Centro creado automáticamente con ID: {center_instance.id}")
 
-            # Crear registro en la base de datos Deteccion
             deteccion = Deteccion(
                 tipo_modelo=tipo_modelo,
                 tiempo_procesamiento=tiempo_procesamiento,
@@ -203,21 +189,17 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
                 confirmed=False  # Inicialmente no está confirmado
             )
 
-            # Guardar los resultados en Deteccion
             deteccion.set_resultados(resultados)
             deteccion.save()
 
-            # Variable para almacenar la referencia a la imagen guardada en el segundo modelo
             imagen_guardada = None
 
-            # Guardar también en el modelo Image solo si se solicita
             if guardar_imagen:
                 try:
-                    # Si no se proporciona metadata, usar los resultados de la detección
                     if not metadata:
                         metadata = resultados
 
-                    # Crear instancia del modelo Image
+                    print("Guardando imagen en modelo Image...:", imagen_file)
                     imagen_guardada = ImageModel(
                         file=imagen_file,
                         taken_at=timezone.now(),
@@ -228,7 +210,6 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
                         metadata=metadata
                     )
 
-                    # Guardar la imagen
                     imagen_guardada.save()
                     logger.info(f"Imagen guardada exitosamente en modelo Image con ID: {imagen_guardada.id}")
 
@@ -238,9 +219,7 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
 
                 except Exception as img_error:
                     logger.error(f"Error al guardar en el modelo Image: {str(img_error)}", exc_info=True)
-                    # Continuar con el proceso aunque falle el guardado en Image
 
-            # Construir la respuesta
             response_data = {
                 'deteccion_id': deteccion.id,
                 'tiempo_procesamiento': tiempo_procesamiento,
@@ -248,7 +227,6 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
                 'confirmed': deteccion.confirmed,
             }
 
-            # Añadir información de la imagen guardada en Image si existe
             if imagen_guardada:
                 response_data['imagen_guardada'] = {
                     'id': imagen_guardada.id,
@@ -276,70 +254,74 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         analysis_id = serializer.validated_data['analysis_id']
-        # Opcionalmente podríamos recibir cambios en los resultados si el usuario los modificó
         resultados_modificados = serializer.validated_data.get('resultados_modificados', None)
 
         try:
-            # Buscar la detección previamente guardada
+            from uploads.models import Image as ImageModel
+            from center.models import Center
+            from django.utils import timezone
+            from django.core.files.base import ContentFile
+            import base64
+
             deteccion = Deteccion.objects.get(id=analysis_id)
 
-            # Si se proporcionaron resultados modificados, actualizarlos
             if resultados_modificados:
                 deteccion.set_resultados(resultados_modificados)
                 deteccion.save()
 
-            # Procesar la imagen si es necesario
             imagen_file = serializer.validated_data.get('imagen', None)
-            guardar_imagen = serializer.validated_data.get('guardar_imagen', True)
+            imagen_pil = prepare_image_for_model(imagen_file)
+
+            modelo_service = RoboflowService()
+            resultados_rf = modelo_service.process_image(imagen_pil)
+
             center_id = serializer.validated_data.get('center_id', None)
 
-            # Variables para el modelo Image
+            if center_id:
+                try:
+                    center_instance = Center.objects.get(id=center_id)
+                except Center.DoesNotExist:
+                    center_instance = deteccion.center
+            else:
+                center_instance = deteccion.center
+
+            guardar_imagen = serializer.validated_data.get('guardar_imagen', True)
             imagen_guardada = None
 
-            # Si tenemos una imagen y queremos guardarla
-            if imagen_file and guardar_imagen:
-                try:
-                    from uploads.models import Image as ImageModel
-                    from center.models import Center
-                    from django.utils import timezone
+            if resultados_rf.get('output_image'):
+                imagen_file = resultados_rf['output_image']
+                # print("Imagen procesada 22222:", imagen_file)
 
-                    # Obtener el centro
-                    center_instance = None
-                    if center_id:
-                        try:
-                            center_instance = Center.objects.get(id=center_id)
-                        except Center.DoesNotExist:
-                            pass
+                if imagen_file and guardar_imagen:
+                    try:
+                        # Si la imagen está en base64
+                        if isinstance(imagen_file, str):
+                            if ',' in imagen_file:
+                                imagen_file = imagen_file.split(',')[1]
+                            imagen_data = base64.b64decode(imagen_file)
+                            imagen_content = ContentFile(imagen_data)
+                            nombre_archivo = f"roboflow_output_{int(time.time())}.png"
 
-                    # Si no hay centro específico, usar el de la detección
-                    if not center_instance:
-                        center_instance = deteccion.center
+                            imagen_guardada = ImageModel(
+                                taken_at=timezone.now(),
+                                taken_by=request.user if request.user.is_authenticated else None,
+                                center=center_instance,
+                                processed=True,
+                                metadata=deteccion.get_resultados()
+                            )
+                            imagen_guardada.file.save(nombre_archivo, imagen_content, save=False)
+                            imagen_guardada.save()
 
-                    # Crear y guardar la imagen
-                    imagen_guardada = ImageModel(
-                        file=imagen_file,
-                        taken_at=timezone.now(),
-                        taken_by=request.user if request.user.is_authenticated else None,
-                        center=center_instance,
-                        processed=True,
-                        metadata=deteccion.get_resultados()
-                    )
+                            deteccion.image = imagen_guardada
+                            deteccion.confirmed = True
+                            deteccion.save(update_fields=['image', 'confirmed'])
 
-                    imagen_guardada.save()
+                    except Exception as img_error:
+                        logger.error(f"Error al guardar imagen confirmada: {str(img_error)}", exc_info=True)
 
-                    # Actualizar la referencia en la detección
-                    deteccion.image = imagen_guardada
-                    deteccion.confirmed = True  # Marcar como confirmada
-                    deteccion.save(update_fields=['image', 'confirmed'])
-
-                except Exception as img_error:
-                    logger.error(f"Error al guardar imagen confirmada: {str(img_error)}", exc_info=True)
-
-            # Serializar la detección para la respuesta
             deteccion_serializer = DeteccionSerializer(deteccion)
             response_data = deteccion_serializer.data
 
-            # Añadir información de la imagen guardada si existe
             if imagen_guardada:
                 response_data['imagen_guardada'] = {
                     'id': imagen_guardada.id,
@@ -405,7 +387,6 @@ class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):
             )
 
         try:
-            # Filtrar detecciones por centro directamente
             detecciones = Deteccion.objects.filter(center_id=center_id)
             serializer = self.get_serializer(detecciones, many=True)
             return Response(serializer.data)

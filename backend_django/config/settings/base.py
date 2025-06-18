@@ -97,7 +97,7 @@ THIRD_PARTY_APPS = [
     "crispy_bootstrap5",
     "allauth",
     "allauth.account",
-    "allauth.mfa",
+    # "allauth.mfa",
     "allauth.socialaccount",
     "django_celery_beat",
     "rest_framework",
@@ -113,12 +113,13 @@ LOCAL_APPS = [
     "backend_django.users",
     "center",
     "uploads",
+    "inventory",
     # Your stuff: custom apps go here
 ]
 
 # Configuraciones para los modelos
 MODEL_SETTINGS = {
-    'YOLO_MODEL_PATH': os.path.join(BASE_DIR, 'weights', 'modelo.pt'),
+    'YOLO_MODEL_PATH': os.path.join(BASE_DIR, 'weights', 'model.pt'),
 }
 
 # Configuraciones para la API de Claude (reemplaza con tus credenciales)

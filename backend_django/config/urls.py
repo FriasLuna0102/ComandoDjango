@@ -26,6 +26,8 @@ urlpatterns = [
     path('', include('deteccion_app.urls')),
 
     path('api/', include('uploads.urls')),
+
+    path('inventory/', include('inventory.urls')),
     # Your stuff: custom urls includes go here
 ]
 

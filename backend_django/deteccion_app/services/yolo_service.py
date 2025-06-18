@@ -25,7 +25,7 @@ class YOLOService(ModelService):
         """
         if model_path is None:
             # Usa la ruta por defecto desde las configuraciones
-            self.model_path = os.path.join(settings.BASE_DIR, 'weights', 'best.pt')
+            self.model_path = os.path.join(settings.BASE_DIR, 'weights', 'model.pt')
         else:
             self.model_path = model_path
 

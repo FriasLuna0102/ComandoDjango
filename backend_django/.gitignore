@@ -279,3 +279,4 @@ backend_django/media/
 .env
 .envs/*
 !.envs/.local/
+.idea/vcs.xml

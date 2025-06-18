@@ -29,7 +29,7 @@ class ImagenUploadSerializer(serializers.Serializer):
         choices=[
             ('yolo', 'YOLO'),
             ('cl', 'Yolo_2.0'),
-            ('roboflow', 'Roboflow API')
+            ('rf_detr', 'RF_DETR')
         ]
     )
     guardar_imagen = serializers.BooleanField(default=False)

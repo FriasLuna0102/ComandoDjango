@@ -18,6 +18,7 @@ class Deteccion(models.Model):
     TIPO_MODELO_CHOICES = [
         ('yolo', 'YOLO'),
         ('cl', 'YOLO 2.0'),
+        ('rf_detr','RF_DETR')
     ]
     tipo_modelo = models.CharField(max_length=20, choices=TIPO_MODELO_CHOICES)
 
