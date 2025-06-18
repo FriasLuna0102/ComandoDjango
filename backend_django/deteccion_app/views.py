@@ -47,46 +47,58 @@ def fix_image_orientation(img):
         return img
 
 
+# def prepare_image_for_model(img_file):
+#     """
+#     Prepara la imagen para el procesamiento con el modelo:
+#     - Corrige la orientación
+#     - Asegura el formato correcto
+#     - Preserva la calidad sin redimensionar innecesariamente
+#     """
+#     try:
+#         img = Image.open(img_file)
+#
+#         if img.mode == 'RGBA':
+#             background = Image.new('RGB', img.size, (255, 255, 255))
+#             background.paste(img, mask=img.split()[3])  # Canal alfa
+#             img = background
+#         elif img.mode != 'RGB':
+#             img = img.convert('RGB')
+#
+#         img = fix_image_orientation(img)
+#
+#         width, height = img.size
+#         max_dimension = 640
+#         if max(width, height) > max_dimension:
+#             scale = max_dimension / max(width, height)
+#             new_size = (int(width * scale), int(height * scale))
+#             img = img.resize(new_size, Image.LANCZOS)
+#
+#         logger.info(f"Imagen preparada: {img.size[0]}x{img.size[1]}, modo: {img.mode}")
+#         return img
+#
+#     except Exception as e:
+#         logger.error(f"Error al preparar la imagen: {e}")
+#         raise
+
+
 def prepare_image_for_model(img_file):
-    """
-    Prepara la imagen para el procesamiento con el modelo:
-    - Corrige la orientación
-    - Asegura el formato correcto
-    - Preserva la calidad sin redimensionar innecesariamente
-    """
-    try:
-        img = Image.open(img_file)
+    img = Image.open(img_file)
 
-        if img.mode == 'RGBA':
-            background = Image.new('RGB', img.size, (255, 255, 255))
-            background.paste(img, mask=img.split()[3])  # Canal alfa
-            img = background
-        elif img.mode != 'RGB':
-            img = img.convert('RGB')
+    # Convertir a RGB si hace falta
+    if img.mode == 'RGBA':
+        bg = Image.new('RGB', img.size, (255,255,255))
+        bg.paste(img, mask=img.split()[3])
+        img = bg
+    elif img.mode != 'RGB':
+        img = img.convert('RGB')
 
-        img = fix_image_orientation(img)
+    img = fix_image_orientation(img)
 
-        width, height = img.size
-        max_dimension = 1920  # Límite razonable que mantiene buena calidad
+    # **Stretch** a 720×720 px (distorsión intencionada)
+    img = img.resize((870, 870), Image.LANCZOS)
 
-        # if width > max_dimension or height > max_dimension:
-        #     # Calcular nueva dimensión preservando proporción
-        #     if width > height:
-        #         new_width = max_dimension
-        #         new_height = int(height * max_dimension / width)
-        #     else:
-        #         new_height = max_dimension
-        #         new_width = int(width * max_dimension / height)
-        #
-        #     logger.info(f"Redimensionando imagen de {width}x{height} a {new_width}x{new_height}")
-        #     img = img.resize((new_width, new_height), Image.LANCZOS)
-
-        logger.info(f"Imagen preparada: {img.size[0]}x{img.size[1]}, modo: {img.mode}")
-        return img
-
-    except Exception as e:
-        logger.error(f"Error al preparar la imagen: {e}")
-        raise
+    logger.info(f"Imagen preparada ESTIRADA: {img.size[0]}x{img.size[1]}, modo: {img.mode}")
+    return img
 
 
 class DeteccionViewSet(viewsets.ReadOnlyModelViewSet):

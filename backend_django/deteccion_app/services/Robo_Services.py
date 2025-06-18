@@ -76,7 +76,7 @@ class RoboflowService(ModelService):
                 workspace_name=self.workspace,
                 workflow_id=self.workflow,
                 images={"image": img},
-                use_cache=True
+                use_cache=False
             )
 
             first = result[0]
