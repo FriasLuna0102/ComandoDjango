@@ -13,7 +13,6 @@ class InventorySnapshot(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='inventory_snapshots')
 
-    # For linking to source data (if the snapshot was generated from detections)
     source_detections = models.ManyToManyField(
         'deteccion_app.Deteccion',
         related_name='inventory_snapshots',
@@ -30,8 +29,8 @@ class InventorySnapshot(models.Model):
 
 
 class ProductCategory(models.Model):
-    """Model for product categories"""
     name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
     description = models.TextField(blank=True)
     ideal_count = models.PositiveIntegerField(default=0, help_text="Recommended inventory level")
     emergency_priority = models.PositiveSmallIntegerField(
@@ -72,7 +71,6 @@ class InventoryReport(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='inventory_reports')
     is_emergency = models.BooleanField(default=False)
 
-    # Reference to the snapshot used to generate this report
     source_snapshot = models.ForeignKey(
         InventorySnapshot,
         on_delete=models.SET_NULL,
@@ -120,9 +118,6 @@ class ProductRecommendation(models.Model):
         return (self.replenish_amount / self.ideal_count) * 100
 
 
-# Add this field to your AnalyticsReport model in models.py
-# This allows storing category names explicitly
-
 class AnalyticsReport(models.Model):
     """Model for consumption analytics reports"""
     PERIOD_CHOICES = [
@@ -136,15 +131,12 @@ class AnalyticsReport(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='analytics_reports')
 
-    # Period type and date range
     period_type = models.CharField(max_length=20, choices=PERIOD_CHOICES, default='weekly')
     start_date = models.DateTimeField()
     end_date = models.DateTimeField()
 
-    # NEW FIELD: Store categories as a comma-separated list
     categories_list = models.TextField(blank=True, help_text="Comma-separated list of category names")
 
-    # Sources used to generate this report
     start_snapshot = models.ForeignKey(
         InventorySnapshot,
         on_delete=models.SET_NULL,

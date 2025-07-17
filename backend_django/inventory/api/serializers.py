@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ProductCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductCategory
-        fields = ['id', 'name', 'description', 'ideal_count', 'emergency_priority', 'created_at']
+        fields = ['id', 'name', 'description', 'ideal_count', 'emergency_priority', 'created_at', 'is_active']
         read_only_fields = ['created_at']
 
 

@@ -16,62 +16,199 @@ from .serializers import (
     GenerateInventoryReportSerializer, GenerateAnalyticsReportSerializer, ConsumptionDataPointSerializer
 )
 
-
 class ProductCategoryViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for Product Categories
-    """
     queryset = ProductCategory.objects.all()
     serializer_class = ProductCategorySerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['name', 'description']
-    ordering_fields = ['name', 'ideal_count', 'emergency_priority', 'created_at']
 
     @action(detail=False, methods=['GET'])
-    def with_ideal_counts(self, request):
-        """
-        Get all categories with their ideal counts for inventory management
-        """
+    def by_center(self, request):
+        """Get all active categories with their configurations"""
+        center_id = request.query_params.get('center_id')
+        if not center_id:
+            return Response(
+                {'error': 'center_id parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Obtener solo las categorías activas
+            categories = ProductCategory.objects.filter(is_active=True)
+
+            # Si no hay categorías, crear algunas por defecto
+            if not categories.exists():
+                categories = ProductCategory.objects.filter(is_active=True)
+
+            serializer = self.get_serializer(categories, many=True)
+            return Response(serializer.data)
+
+        except Exception as e:
+            return Response(
+                {'error': f'Error loading categories: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['GET'])
+    def categories_stats(self, request):
+        """Get statistics for categories in a center"""
+        center_id = request.query_params.get('center_id')
+        if not center_id:
+            return Response(
+                {'error': 'center_id parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         categories = self.get_queryset()
+        stats = []
 
-        # Format as a dictionary for easier use in Flutter
-        ideal_counts = {}
         for category in categories:
-            ideal_counts[category.name] = category.ideal_count
+            # Obtener el último snapshot del centro
+            latest_item = InventoryItem.objects.filter(
+                snapshot__center_id=center_id,
+                category=category
+            ).order_by('-snapshot__created_at').first()
 
-        return Response(ideal_counts)
+            current_count = latest_item.count if latest_item else 0
+            ideal_count = category.ideal_count
+
+            stats.append({
+                'id': category.id,
+                'name': category.name,
+                'current_count': current_count,
+                'ideal_count': ideal_count,
+                'emergency_priority': category.emergency_priority,
+                'status': self._calculate_status(current_count, ideal_count),
+                'last_updated': latest_item.snapshot.created_at if latest_item else None
+            })
+
+        return Response(stats)
+
+    def _calculate_status(self, current_count, ideal_count):
+        """Calculate status based on current and ideal counts"""
+        if ideal_count == 0:
+            return 'unknown'
+
+        percentage = (current_count / ideal_count) * 100
+
+        if percentage <= 25:
+            return 'critical'
+        elif percentage <= 50:
+            return 'low'
+        elif percentage <= 75:
+            return 'moderate'
+        else:
+            return 'good'
+
+    def create(self, request, *args, **kwargs):
+        """Override create method to handle category creation/reactivation"""
+        try:
+            name = request.data.get('name')
+            ideal_count = request.data.get('ideal_count', 50)
+            emergency_priority = request.data.get('emergency_priority', 3)
+
+            # Check for existing category (including inactive)
+            category = ProductCategory.objects.filter(name=name).first()
+
+            if category:
+                if not category.is_active:
+                    # Reactivate and update existing category
+                    category.is_active = True
+                    category.ideal_count = ideal_count
+                    category.emergency_priority = emergency_priority
+                    category.save()
+                    serializer = self.get_serializer(category)
+                    return Response(serializer.data, status=status.HTTP_200_OK)
+                else:
+                    return Response(
+                        {'error': f'Category {name} already exists and is active'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            category = ProductCategory.objects.create(
+                name=name,
+                ideal_count=ideal_count,
+                emergency_priority=emergency_priority
+            )
+
+            serializer = self.get_serializer(category)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def get_queryset(self):
+        """Only return active categories"""
+        return ProductCategory.objects.filter(is_active=True)
+
+    @action(detail=False, methods=['DELETE'], url_path='delete-by-name/(?P<name>[^/.]+)')
+    def delete_by_name(self, request, name=None):
+        """Soft delete a category by marking it inactive"""
+        try:
+            category = ProductCategory.objects.get(name=name)
+            category.is_active = False  # Soft delete
+            category.save()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProductCategory.DoesNotExist:
+            return Response(
+                {'error': f'Category with name {name} not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
     @action(detail=False, methods=['POST'])
-    def update_ideal_counts(self, request):
-        """
-        Update ideal counts for multiple categories at once
-        """
-        # Expected format: {category_name: ideal_count, ...}
-        counts_data = request.data
+    def bulk_update(self, request):
+        """Update multiple category configurations at once"""
+        try:
+            categories_data = request.data
+            print(f"Received categories data: {categories_data}")
 
-        updated = []
-        created = []
+            updates = []
+            errors = []
 
-        for name, ideal_count in counts_data.items():
-            try:
-                # Try to update existing category
-                category = ProductCategory.objects.get(name=name)
-                category.ideal_count = ideal_count
-                category.save()
-                updated.append(name)
-            except ProductCategory.DoesNotExist:
-                # Create new category
-                ProductCategory.objects.create(
-                    name=name,
-                    ideal_count=ideal_count
-                )
-                created.append(name)
+            for category_data in categories_data:
+                try:
+                    name = category_data.get('name')
+                    ideal_count = category_data.get('ideal_count')
+                    emergency_priority = category_data.get('emergency_priority')
 
-        return Response({
-            'updated': updated,
-            'created': created
-        })
+                    if not name:
+                        errors.append({'error': 'Missing category name'})
+                        continue
+
+                    # Solo actualizar categorías existentes
+                    try:
+                        category = ProductCategory.objects.get(name=name)
+                        if ideal_count is not None:
+                            category.ideal_count = ideal_count
+                        if emergency_priority is not None:
+                            category.emergency_priority = emergency_priority
+                        category.save()
+                        updates.append(self.get_serializer(category).data)
+                        print(f"Updated category: {name}")
+                    except ProductCategory.DoesNotExist:
+                        print(f"Category not found, skipping: {name}")
+                        continue
+
+                except Exception as e:
+                    print(f"Error updating category {name}: {str(e)}")
+                    errors.append({
+                        'category': name,
+                        'error': str(e)
+                    })
+
+            return Response({
+                'updated': updates,
+                'errors': errors
+            })
+
+        except Exception as e:
+            print(f"Error in bulk_update: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class InventorySnapshotViewSet(viewsets.ModelViewSet):
@@ -128,6 +265,7 @@ class InventorySnapshotViewSet(viewsets.ModelViewSet):
             counts[item.category.name] = item.count
 
         return Response(counts)
+
 
 
 class InventoryReportViewSet(viewsets.ModelViewSet):
@@ -284,7 +422,7 @@ class InventoryReportViewSet(viewsets.ModelViewSet):
             )
 
             # Get all product categories
-            categories = ProductCategory.objects.all()
+            categories = ProductCategory.objects.filter(is_active=True)
 
             # Create recommendations for each category
             for category in categories:
